@@ -11,8 +11,8 @@ private:
         IEncryptionPlugin* plugin;
     };
     
-    std::map<std::string, LoadedModule> modules;  // по имени
-    std::map<std::string, std::string> extToName; // по расширению
+    std::map<std::string, LoadedModule> modules;
+    std::map<std::string, std::string> extToName;
     
 public:
     ModuleManager();

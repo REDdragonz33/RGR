@@ -1,11 +1,32 @@
 #include <iostream>
 #include <string>
-#include <filesystem>
+#include <vector>
+#include <cstring>
+#include <sys/stat.h>
 #include "module_manager.h"
 #include "file_utils.h"
 
 using namespace std;
-namespace fs = filesystem;
+
+// Проверка существования файла (C++11 способ)
+bool fileExists(const string& path) {
+    struct stat buffer;
+    return (stat(path.c_str(), &buffer) == 0);
+}
+
+// Получение расширения файла
+string getExtension(const string& path) {
+    size_t dot = path.rfind('.');
+    if (dot == string::npos) return "";
+    return path.substr(dot);
+}
+
+// Получение имени файла без расширения
+string getStem(const string& path) {
+    size_t dot = path.rfind('.');
+    if (dot == string::npos) return path;
+    return path.substr(0, dot);
+}
 
 void showHelp() {
     cout << "\n=== Криптографическая система ===" << endl;
@@ -23,29 +44,29 @@ void showHelp() {
     cout << "  Gronsveld : цифры           (например: 31415)" << endl;
     cout << "  Keyword   : любая строка    (например: secret)" << endl;
     cout << "  A5/1      : 64-битное число (например: 123456789 или 0xDEADBEEF)" << endl;
+    cout << "\nВсе файлы сохраняются в текущую папку." << endl;
 }
 
-// Вывод списка загруженных шифров
 void cmdList(ModuleManager& manager) {
-    auto names = manager.getPluginNames();
+    vector<string> names = manager.getPluginNames();
     if (names.empty()) {
         cout << "Нет загруженных шифров." << endl;
         return;
     }
     cout << "\nДоступные шифры:" << endl;
-    for (const auto& name : names) {
-        auto* plugin = manager.getPlugin(name);
+    for (size_t i = 0; i < names.size(); ++i) {
+        const string& name = names[i];
+        IEncryptionPlugin* plugin = manager.getPlugin(name);
         if (plugin) {
-            auto info = plugin->getInfo();
+            PluginInfo info = plugin->getInfo();
             cout << "  • " << info.name << " - " << info.description << endl;
             cout << "    Расширение: " << info.extension << endl;
         }
     }
 }
 
-// Шифрование файла
 void cmdEncryptFile(ModuleManager& manager, const string& filePath, const string& pluginName) {
-    if (!fs::exists(filePath)) {
+    if (!fileExists(filePath)) {
         cerr << "Ошибка: файл не найден - " << filePath << endl;
         return;
     }
@@ -62,8 +83,8 @@ void cmdEncryptFile(ModuleManager& manager, const string& filePath, const string
     
     try {
         cout << "Шифрование с помощью " << info.name << "..." << endl;
-        auto data = readFile(filePath);
-        auto encrypted = plugin->encrypt(data, key);
+        vector<unsigned char> data = readFile(filePath);
+        vector<unsigned char> encrypted = plugin->encrypt(data, key);
         
         string outPath = filePath + info.extension;
         writeFile(outPath, encrypted);
@@ -73,14 +94,13 @@ void cmdEncryptFile(ModuleManager& manager, const string& filePath, const string
     }
 }
 
-// Дешифрование файла
 void cmdDecryptFile(ModuleManager& manager, const string& filePath) {
-    if (!fs::exists(filePath)) {
+    if (!fileExists(filePath)) {
         cerr << "Ошибка: файл не найден - " << filePath << endl;
         return;
     }
     
-    string ext = fs::path(filePath).extension().string();
+    string ext = getExtension(filePath);
     IEncryptionPlugin* plugin = manager.getPluginByExtension(ext);
     
     if (!plugin) {
@@ -93,10 +113,10 @@ void cmdDecryptFile(ModuleManager& manager, const string& filePath) {
     
     try {
         cout << "Дешифрование с помощью " << info.name << "..." << endl;
-        auto data = readFile(filePath);
-        auto decrypted = plugin->decrypt(data, key);
+        vector<unsigned char> data = readFile(filePath);
+        vector<unsigned char> decrypted = plugin->decrypt(data, key);
         
-        string outPath = fs::path(filePath).stem().string();
+        string outPath = getStem(filePath);
         writeFile(outPath, decrypted);
         cout << "✓ Расшифровано: " << outPath << endl;
     } catch (const exception& e) {
@@ -104,7 +124,6 @@ void cmdDecryptFile(ModuleManager& manager, const string& filePath) {
     }
 }
 
-// Шифрование текста из консоли
 void cmdEncryptText(ModuleManager& manager, const string& pluginName) {
     IEncryptionPlugin* plugin = manager.getPlugin(pluginName);
     if (!plugin) {
@@ -120,7 +139,7 @@ void cmdEncryptText(ModuleManager& manager, const string& pluginName) {
     
     try {
         vector<unsigned char> data(text.begin(), text.end());
-        auto encrypted = plugin->encrypt(data, key);
+        vector<unsigned char> encrypted = plugin->encrypt(data, key);
         cout << "\nЗашифрованный текст (hex):" << endl;
         cout << toHex(encrypted) << endl;
     } catch (const exception& e) {
@@ -128,7 +147,6 @@ void cmdEncryptText(ModuleManager& manager, const string& pluginName) {
     }
 }
 
-// Дешифрование hex-текста из консоли
 void cmdDecryptText(ModuleManager& manager, const string& pluginName) {
     IEncryptionPlugin* plugin = manager.getPlugin(pluginName);
     if (!plugin) {
@@ -142,14 +160,13 @@ void cmdDecryptText(ModuleManager& manager, const string& pluginName) {
     cout << "Введите hex-текст (байты через пробел, например: 41 42 43): ";
     getline(cin, hexText);
     
-    // Парсинг hex-строки в байты
     vector<unsigned char> data;
     size_t pos = 0;
     while (pos < hexText.size()) {
         while (pos < hexText.size() && hexText[pos] == ' ') ++pos;
         if (pos + 2 > hexText.size()) break;
         try {
-            unsigned char byte = static_cast<unsigned char>(stoul(hexText.substr(pos, 2), nullptr, 16));
+            unsigned char byte = static_cast<unsigned char>(stoul(hexText.substr(pos, 2), NULL, 16));
             data.push_back(byte);
         } catch (...) {
             cerr << "Ошибка: некорректный hex на позиции " << pos << endl;
@@ -164,7 +181,7 @@ void cmdDecryptText(ModuleManager& manager, const string& pluginName) {
     }
     
     try {
-        auto decrypted = plugin->decrypt(data, key);
+        vector<unsigned char> decrypted = plugin->decrypt(data, key);
         cout << "\nРасшифрованный текст:" << endl;
         cout << string(decrypted.begin(), decrypted.end()) << endl;
     } catch (const exception& e) {
@@ -172,7 +189,6 @@ void cmdDecryptText(ModuleManager& manager, const string& pluginName) {
     }
 }
 
-// Генерация ключа для выбранного шифра
 void cmdKeygen(ModuleManager& manager, const string& pluginName) {
     IEncryptionPlugin* plugin = manager.getPlugin(pluginName);
     if (!plugin) {
@@ -190,14 +206,12 @@ int main(int argc, char* argv[]) {
     
     ModuleManager manager;
     
-    // Загрузка плагинов
     cout << "\nЗагрузка модулей..." << endl;
     manager.loadModule("./libgronsveld.so");
     manager.loadModule("./libkeyword.so");
     manager.loadModule("./liba51.so");
     
     if (argc > 1) {
-        // Режим командной строки
         string cmd = argv[1];
         
         if (cmd == "list") {
@@ -237,7 +251,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     
-    // Интерактивный режим
     showHelp();
     
     string input;
@@ -261,7 +274,6 @@ int main(int argc, char* argv[]) {
             continue;
         }
         
-        // Разбиваем строку на токены
         vector<string> tokens;
         size_t pos = 0;
         while (pos < input.size()) {

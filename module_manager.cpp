@@ -34,7 +34,8 @@ bool ModuleManager::loadModule(const string& path) {
     }
     
     PluginInfo info = plugin->getInfo();
-    modules[info.name] = {handle, plugin};
+    LoadedModule mod = {handle, plugin};
+    modules[info.name] = mod;
     extToName[info.extension] = info.name;
     
     cout << "✓ Загружен: " << info.name << " (" << info.extension << ")" << endl;
@@ -42,34 +43,35 @@ bool ModuleManager::loadModule(const string& path) {
 }
 
 IEncryptionPlugin* ModuleManager::getPlugin(const string& name) {
-    auto it = modules.find(name);
-    return (it != modules.end()) ? it->second.plugin : nullptr;
+    map<string, LoadedModule>::iterator it = modules.find(name);
+    return (it != modules.end()) ? it->second.plugin : NULL;
 }
 
 IEncryptionPlugin* ModuleManager::getPluginByExtension(const string& ext) {
-    auto it = extToName.find(ext);
-    if (it == extToName.end()) return nullptr;
+    map<string, string>::iterator it = extToName.find(ext);
+    if (it == extToName.end()) return NULL;
     return getPlugin(it->second);
 }
 
 vector<string> ModuleManager::getPluginNames() {
     vector<string> names;
-    for (auto& [name, _] : modules) {
-        names.push_back(name);
+    for (map<string, LoadedModule>::iterator it = modules.begin(); it != modules.end(); ++it) {
+        names.push_back(it->first);
     }
     return names;
 }
 
 vector<string> ModuleManager::getPluginExtensions() {
     vector<string> exts;
-    for (auto& [ext, _] : extToName) {
-        exts.push_back(ext);
+    for (map<string, string>::iterator it = extToName.begin(); it != extToName.end(); ++it) {
+        exts.push_back(it->first);
     }
     return exts;
 }
 
 void ModuleManager::unloadAll() {
-    for (auto& [name, mod] : modules) {
+    for (map<string, LoadedModule>::iterator it = modules.begin(); it != modules.end(); ++it) {
+        LoadedModule& mod = it->second;
         destroy_plugin_t destroy = (destroy_plugin_t)dlsym(mod.handle, "destroy_plugin");
         if (destroy && mod.plugin) {
             destroy(mod.plugin);
